@@ -86,6 +86,56 @@ def derslik_ekle(derslik_bilgileri):
         if conn is not None:
             conn.close()
 
+def derslik_detay_getir(derslik_id):
+    """Verilen ID'ye sahip tek bir dersliğin tüm bilgilerini çeker."""
+    conn = get_connection()
+    if conn is None:
+        return None
+
+    sql_komutu = "SELECT * FROM Derslikler WHERE derslik_id = %s;"
+    derslik_detay = None
+    try:
+        cur = conn.cursor()
+        cur.execute(sql_komutu, (derslik_id,))
+        derslik_detay = cur.fetchone()
+        cur.close()
+    except Exception as e:
+        print(f"HATA: Derslik detayı getirilirken sorun oluştu: {e}")
+    finally:
+        if conn is not None:
+            conn.close()
+    return derslik_detay
+
+def derslik_guncelle(derslik_bilgileri):
+    """Verilen ID'ye sahip dersliğin bilgilerini günceller."""
+    conn = get_connection()
+    if conn is None:
+        return False, "Veritabanı bağlantısı kurulamadı."
+
+    sql_komutu = """
+                 UPDATE Derslikler \
+                 SET derslik_kodu       = %(derslik_kodu)s, \
+                     derslik_adi        = %(derslik_adi)s, \
+                     kapasite           = %(kapasite)s, \
+                     enine_sira_sayisi  = %(enine_sira)s, \
+                     boyuna_sira_sayisi = %(boyuna_sira)s, \
+                     sira_yapisi        = %(sira_yapisi)s
+                 WHERE derslik_id = %(derslik_id)s; \
+                 """
+
+    try:
+        cur = conn.cursor()
+        cur.execute(sql_komutu, derslik_bilgileri)
+        conn.commit()
+        cur.close()
+        return True, "Derslik başarıyla güncellendi."
+    except Exception as e:
+        conn.rollback()
+        return False, f"Derslik güncellenirken hata oluştu: {e}"
+    finally:
+        if conn is not None:
+            conn.close()
+
 def kullanici_dogrula(email, sifre):
     """Verilen email ve şifre ile kullanıcıyı doğrular, kullanıcı bilgilerini döndürür."""
     conn = get_connection()
@@ -225,6 +275,191 @@ def ogrencileri_sil_ve_ekle(kayitlar_listesi, bolum_id):
     except Exception as e:
         conn.rollback()
         return False, f"İşlem sırasında veritabanı hatası oluştu: {e}"
+    finally:
+        if conn is not None:
+            conn.close()
+
+def ogrenci_derslerini_getir(ogrenci_no, bolum_id):
+    """Verilen öğrenci numarasına göre öğrencinin adını ve aldığı dersleri döndürür."""
+    conn = get_connection()
+    if conn is None:
+        return None, []
+
+    # SQL'de tabloları birleştirerek (JOIN) öğrencinin derslerini buluyoruz.
+    sql_komutu = """
+        SELECT o.ad_soyad, d.ders_kodu, d.ders_adi 
+        FROM Ogrenciler o
+        JOIN OgrenciDersKayitlari odk ON o.ogrenci_id = odk.ogrenci_id
+        JOIN Dersler d ON odk.ders_id = d.ders_id
+        WHERE o.ogrenci_no = %s AND o.bolum_id = %s;
+    """
+    ogrenci_adi = None
+    dersler = []
+    try:
+        cur = conn.cursor()
+        cur.execute(sql_komutu, (ogrenci_no, bolum_id))
+        rows = cur.fetchall()
+        if rows:
+            ogrenci_adi = rows[0][0] # İlk satırın ilk sütunu öğrencinin adıdır
+            dersler = [f"{row[1]} - {row[2]}" for row in rows] # Ders kodu ve adını birleştir
+        cur.close()
+    except Exception as e:
+        print(f"HATA: Öğrenci dersleri getirilirken sorun oluştu: {e}")
+    finally:
+        if conn is not None:
+            conn.close()
+    return ogrenci_adi, dersler
+
+def bolumun_derslerini_getir(bolum_id):
+    """Belirli bir bölüme ait tüm dersleri (ID, Kod, Ad) listesi olarak döndürür."""
+    conn = get_connection()
+    if conn is None: return []
+    sql_komutu = "SELECT ders_id, ders_kodu, ders_adi FROM Dersler WHERE bolum_id = %s ORDER BY ders_kodu;"
+    dersler = []
+    try:
+        cur = conn.cursor()
+        cur.execute(sql_komutu, (bolum_id,))
+        dersler = cur.fetchall()
+        cur.close()
+    except Exception as e:
+        print(f"HATA: Bölüm dersleri getirilirken sorun oluştu: {e}")
+    finally:
+        if conn is not None:
+            conn.close()
+    return dersler
+
+def dersi_alan_ogrencileri_getir(ders_id):
+    """Verilen ders ID'sine göre o dersi alan tüm öğrencileri döndürür."""
+    conn = get_connection()
+    if conn is None: return []
+    sql_komutu = """
+        SELECT o.ogrenci_no, o.ad_soyad 
+        FROM Ogrenciler o 
+        JOIN OgrenciDersKayitlari odk ON o.ogrenci_id = odk.ogrenci_id 
+        WHERE odk.ders_id = %s ORDER BY o.ogrenci_no;
+    """
+    ogrenciler = []
+    try:
+        cur = conn.cursor()
+        cur.execute(sql_komutu, (ders_id,))
+        ogrenciler = cur.fetchall()
+        cur.close()
+    except Exception as e:
+        print(f"HATA: Dersi alan öğrenciler getirilirken sorun oluştu: {e}")
+    finally:
+        if conn is not None:
+            conn.close()
+    return ogrenciler
+
+def ders_verisi_var_mi(bolum_id):
+    """Belirtilen bölüme ait en az bir ders kaydı olup olmadığını kontrol eder."""
+    conn = get_connection()
+    if conn is None: return False
+
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM Dersler WHERE bolum_id = %s;", (bolum_id,))
+        count = cur.fetchone()[0]
+        cur.close()
+        return count > 0  # Eğer satır sayısı 0'dan büyükse True döner
+    except Exception as e:
+        print(f"HATA: Ders verisi kontrol edilirken sorun oluştu: {e}")
+        return False
+    finally:
+        if conn is not None:
+            conn.close()
+
+def ogrenci_verisi_var_mi(bolum_id):
+    """Belirtilen bölüme ait en az bir öğrenci kaydı olup olmadığını kontrol eder."""
+    conn = get_connection()
+    if conn is None: return False
+
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM Ogrenciler WHERE bolum_id = %s;", (bolum_id,))
+        count = cur.fetchone()[0]
+        cur.close()
+        return count > 0  # Eğer satır sayısı 0'dan büyükse True döner
+    except Exception as e:
+        print(f"HATA: Öğrenci verisi kontrol edilirken sorun oluştu: {e}")
+        return False
+    finally:
+        if conn is not None:
+            conn.close()
+
+            def sinav_programini_kaydet(program, bolum_id, sinav_turu):
+                """Oluşturulan sınav programını veritabanı tablolarına kaydeder."""
+                conn = get_connection()
+                if conn is None: return False, "Veritabanı bağlantısı kurulamadı."
+
+                try:
+                    cur = conn.cursor()
+
+                    # 1. Adım: O bölüme ait eski sınav programını temizle
+                    cur.execute("DELETE FROM SinavProgrami WHERE bolum_id = %s AND sinav_turu = %s;",
+                                (bolum_id, sinav_turu))
+
+                    # 2. Adım: Yeni programı kaydet
+                    for ders_id, info in program.items():
+                        # a) SinavProgrami tablosuna ana kaydı ekle ve yeni sinav_id'yi al
+                        sql_sinav_ekle = """
+                                         INSERT INTO SinavProgrami (bolum_id, ders_id, sinav_turu, tarih, saat, sure)
+                                         VALUES (%s, %s, %s, %s, %s, %s) RETURNING sinav_id; \
+                                         """
+                        # Varsayılan süreyi şimdilik 75 dk alıyoruz, bu daha sonra arayüzden gelen süre ile değiştirilebilir.
+                        cur.execute(sql_sinav_ekle, (bolum_id, ders_id, sinav_turu, info['tarih'], info['saat'], 75))
+                        yeni_sinav_id = cur.fetchone()[0]
+
+                        # b) O sınava atanan her dersliği SinavDerslikAtamalari tablosuna ekle
+                        for derslik in info['derslikler']:
+                            derslik_id = derslik['id']
+                            sql_atama_ekle = "INSERT INTO SinavDerslikAtamalari (sinav_id, derslik_id) VALUES (%s, %s);"
+                            cur.execute(sql_atama_ekle, (yeni_sinav_id, derslik_id))
+
+                    conn.commit()
+                    cur.close()
+                    return True, "Sınav programı başarıyla veritabanına kaydedildi."
+                except Exception as e:
+                    conn.rollback()
+                    return False, f"Program kaydedilirken veritabanı hatası oluştu: {e}"
+                finally:
+                    if conn is not None:
+                        conn.close()
+
+def sinav_programini_kaydet(program, bolum_id, sinav_turu):
+    """Oluşturulan sınav programını veritabanı tablolarına kaydeder."""
+    conn = get_connection()
+    if conn is None: return False, "Veritabanı bağlantısı kurulamadı."
+
+    try:
+        cur = conn.cursor()
+
+        # 1. Adım: O bölüme ait eski sınav programını temizle
+        cur.execute("DELETE FROM SinavProgrami WHERE bolum_id = %s AND sinav_turu = %s;", (bolum_id, sinav_turu))
+
+        # 2. Adım: Yeni programı kaydet
+        for ders_id, info in program.items():
+            # a) SinavProgrami tablosuna ana kaydı ekle ve yeni sinav_id'yi al
+            sql_sinav_ekle = """
+                             INSERT INTO SinavProgrami (bolum_id, ders_id, sinav_turu, tarih, saat, sure)
+                             VALUES (%s, %s, %s, %s, %s, %s) RETURNING sinav_id; \
+                             """
+            # Varsayılan süreyi şimdilik 75 dk alıyoruz, bu daha sonra arayüzden gelen süre ile değiştirilebilir.
+            cur.execute(sql_sinav_ekle, (bolum_id, ders_id, sinav_turu, info['tarih'], info['saat'], 75))
+            yeni_sinav_id = cur.fetchone()[0]
+
+            # b) O sınava atanan her dersliği SinavDerslikAtamalari tablosuna ekle
+            for derslik in info['derslikler']:
+                derslik_id = derslik['id']
+                sql_atama_ekle = "INSERT INTO SinavDerslikAtamalari (sinav_id, derslik_id) VALUES (%s, %s);"
+                cur.execute(sql_atama_ekle, (yeni_sinav_id, derslik_id))
+
+        conn.commit()
+        cur.close()
+        return True, "Sınav programı başarıyla veritabanına kaydedildi."
+    except Exception as e:
+        conn.rollback()
+        return False, f"Program kaydedilirken veritabanı hatası oluştu: {e}"
     finally:
         if conn is not None:
             conn.close()
