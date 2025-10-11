@@ -463,3 +463,152 @@ def sinav_programini_kaydet(program, bolum_id, sinav_turu):
     finally:
         if conn is not None:
             conn.close()
+
+            # ... (dosyanın üstündeki diğer fonksiyonlar aynı kalacak) ...
+
+            def sinav_programi_var_mi(bolum_id):
+                """Belirtilen bölüme ait en az bir sınav kaydı olup olmadığını kontrol eder."""
+                conn = get_connection()
+                if conn is None: return False
+                try:
+                    cur = conn.cursor()
+                    cur.execute("SELECT COUNT(*) FROM SinavProgrami WHERE bolum_id = %s;", (bolum_id,))
+                    count = cur.fetchone()[0]
+                    cur.close()
+                    return count > 0
+                except Exception as e:
+                    print(f"HATA: Sınav programı varlığı kontrol edilirken sorun oluştu: {e}")
+                    return False
+                finally:
+                    if conn is not None:
+                        conn.close()
+
+            def get_sinav_listesi(bolum_id):
+                """Belirtilen bölüme ait, oluşturulmuş tüm sınavları listeler."""
+                conn = get_connection()
+                if conn is None: return []
+                sql_komutu = """
+                             SELECT sp.sinav_id, d.ders_kodu, d.ders_adi, sp.tarih, sp.saat
+                             FROM SinavProgrami sp
+                                      JOIN Dersler d ON sp.ders_id = d.ders_id
+                             WHERE sp.bolum_id = %s
+                             ORDER BY sp.tarih, sp.saat; \
+                             """
+                sinavlar = []
+                try:
+                    cur = conn.cursor()
+                    cur.execute(sql_komutu, (bolum_id,))
+                    sinavlar = cur.fetchall()
+                    cur.close()
+                except Exception as e:
+                    print(f"HATA: Sınav listesi getirilirken sorun oluştu: {e}")
+                finally:
+                    if conn is not None:
+                        conn.close()
+                return sinavlar
+
+def sinav_programi_var_mi(bolum_id):
+    """Belirtilen bölüme ait en az bir sınav kaydı olup olmadığını kontrol eder."""
+    conn = get_connection()
+    if conn is None: return False
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM SinavProgrami WHERE bolum_id = %s;", (bolum_id,))
+        count = cur.fetchone()[0]
+        cur.close()
+        return count > 0
+    except Exception as e:
+        print(f"HATA: Sınav programı varlığı kontrol edilirken sorun oluştu: {e}")
+        return False
+    finally:
+        if conn is not None:
+            conn.close()
+
+def get_sinav_listesi(bolum_id):
+    """Belirtilen bölüme ait, oluşturulmuş tüm sınavları listeler."""
+    conn = get_connection()
+    if conn is None: return []
+    sql_komutu = """
+        SELECT sp.sinav_id, d.ders_kodu, d.ders_adi, sp.tarih, sp.saat
+        FROM SinavProgrami sp
+        JOIN Dersler d ON sp.ders_id = d.ders_id
+        WHERE sp.bolum_id = %s
+        ORDER BY sp.tarih, sp.saat;
+    """
+    sinavlar = []
+    try:
+        cur = conn.cursor()
+        cur.execute(sql_komutu, (bolum_id,))
+        sinavlar = cur.fetchall()
+        cur.close()
+    except Exception as e:
+        print(f"HATA: Sınav listesi getirilirken sorun oluştu: {e}")
+    finally:
+        if conn is not None:
+            conn.close()
+    return sinavlar
+
+def get_sinav_detaylari_for_plan(sinav_id):
+    """Oturma planı için seçilen sınavın tüm detaylarını çeker."""
+    conn = get_connection()
+    if conn is None: return None, None
+
+    # 1. Sınava giren öğrencileri al
+    ogrenciler_sql = """
+                     SELECT o.ogrenci_id, o.ogrenci_no, o.ad_soyad
+                     FROM Ogrenciler o
+                              JOIN OgrenciDersKayitlari odk ON o.ogrenci_id = odk.ogrenci_id
+                              JOIN SinavProgrami sp ON odk.ders_id = sp.ders_id
+                     WHERE sp.sinav_id = %s; \
+                     """
+
+    # 2. Sınavın yapılacağı derslikleri ve özelliklerini al
+    derslikler_sql = """
+                     SELECT d.derslik_id, d.derslik_adi, d.enine_sira_sayisi, d.boyuna_sira_sayisi, d.sira_yapisi
+                     FROM Derslikler d
+                              JOIN SinavDerslikAtamalari sda ON d.derslik_id = sda.derslik_id
+                     WHERE sda.sinav_id = %s; \
+                     """
+
+    ogrenciler = []
+    derslikler = []
+    try:
+        cur = conn.cursor()
+        cur.execute(ogrenciler_sql, (sinav_id,))
+        ogrenciler = cur.fetchall()
+        cur.execute(derslikler_sql, (sinav_id,))
+        derslikler = cur.fetchall()
+        cur.close()
+    except Exception as e:
+        print(f"HATA: Sınav detayları getirilirken sorun oluştu: {e}")
+    finally:
+        if conn is not None:
+            conn.close()
+
+    return ogrenciler, derslikler
+
+def oturma_planini_kaydet(sinav_id, plan):
+    """Oluşturulan oturma planını veritabanına kaydeder."""
+    conn = get_connection()
+    if conn is None: return False, "Veritabanı bağlantısı kurulamadı."
+
+    try:
+        cur = conn.cursor()
+        # Önce bu sınava ait eski planı temizle
+        cur.execute("DELETE FROM OturmaPlanlari WHERE sinav_id = %s;", (sinav_id,))
+
+        # Yeni planı toplu olarak ekle
+        sql_insert = "INSERT INTO OturmaPlanlari (sinav_id, ogrenci_id, derslik_id, sira_no, sutun_no) VALUES (%s, %s, %s, %s, %s);"
+
+        from psycopg2.extras import execute_batch  # Bu importu fonksiyon içinde yapabiliriz
+        execute_batch(cur, sql_insert, plan)
+
+        conn.commit()
+        cur.close()
+        return True, "Oturma planı başarıyla veritabanına kaydedildi."
+    except Exception as e:
+        conn.rollback()
+        return False, f"Oturma planı kaydedilirken hata oluştu: {e}"
+    finally:
+        if conn is not None:
+            conn.close()

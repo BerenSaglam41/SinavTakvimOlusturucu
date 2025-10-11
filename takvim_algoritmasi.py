@@ -1,7 +1,8 @@
 import database
 from datetime import date, timedelta, datetime, time
 import pandas as pd # Dosyanın en üstüne bu importu ekle
-
+import itertools
+import random
 def _verileri_hazirla(bolum_id, secilen_ders_idler):
     print("Algoritma için veriler hazırlanıyor...")
     dersler = {}
@@ -75,15 +76,33 @@ def _zaman_dilimlerini_olustur(ayarlar):
     return zaman_dilimleri
 
 def _uygun_derslik_bul(ders_ogrenci_sayisi, kullanilabilir_derslikler):
-    """Verilen öğrenci sayısı için YALNIZCA KULLANILABİLİR derslikler arasından atama yapar."""
-    toplam_kapasite = 0
-    atanan_derslikler = []
-    for derslik in kullanilabilir_derslikler:
-        atanan_derslikler.append(derslik)
-        toplam_kapasite += derslik['kapasite']
-        if toplam_kapasite >= ders_ogrenci_sayisi:
-            return atanan_derslikler
-    return None  # Yeterli kapasite bulunamadı
+    """
+    (AKILLI SÜRÜM 3.0) Verilen öğrenci sayısı için, kapasiteyi karşılayan
+    ve derslik kullanımını çeşitlendiren verimli bir kombinasyon bulur.
+    """
+    if not kullanilabilir_derslikler:
+        return None
+
+    # --- ÇEŞİTLİLİĞİ SAĞLAYAN YENİ ADIM ---
+    # Kombinasyonları aramadan önce mevcut boş derslik listesini karıştır.
+    # Bu, her seferinde farklı bir arama sırası oluşturur ve
+    # aynı dersliklerin tekrar tekrar seçilmesini engeller.
+    random.shuffle(kullanilabilir_derslikler)
+    # ------------------------------------
+
+    # 1'den başlayarak tüm olası kombinasyon boyutlarını dene
+    for i in range(1, len(kullanilabilir_derslikler) + 1):
+        for kombinasyon in itertools.combinations(kullanilabilir_derslikler, i):
+            toplam_kapasite = sum(d['kapasite'] for d in kombinasyon)
+
+            # Eğer bu kombinasyonun kapasitesi yeterliyse, hemen döndür.
+            # Liste zaten rastgele olduğu için, bu yeterli kapasiteyi sağlayan
+            # ilk geçerli kombinasyon olacaktır.
+            if toplam_kapasite >= ders_ogrenci_sayisi:
+                return list(kombinasyon)
+
+    # Yeterli kapasite bulunamadıysa
+    return None
 
 def program_olustur(bolum_id, ayarlar, secilen_ders_idler):
     """

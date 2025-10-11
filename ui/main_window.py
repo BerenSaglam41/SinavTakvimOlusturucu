@@ -5,6 +5,7 @@ from ui.view_derslik import DerslikView
 from ui.view_veri_yukleme import VeriYuklemeView
 from ui.view_kayit_goruntuleme import KayitGoruntulemeView
 from ui.view_sinav_olusturma import SinavOlusturmaView
+from ui.view_oturma_plani import OturmaPlaniView
 
 
 class MainWindow(QMainWindow):
@@ -20,6 +21,7 @@ class MainWindow(QMainWindow):
         # --- Durum Değişkenleri ---
         self.dersler_yuklendi = False
         self.ogrenciler_yuklendi = False
+        self.program_olusturuldu = False
 
         # --- Ana Arayüz ---
         central_widget = QWidget()
@@ -39,30 +41,43 @@ class MainWindow(QMainWindow):
         self.create_views_and_menu()
         self.nav_menu.currentItemChanged.connect(self.change_view)
 
+        # Pencere açılır açılmaz veritabanını kontrol et
         self.initial_data_check()
 
     def create_views_and_menu(self):
-        """Menü elemanlarını ve karşılık gelen sayfaları oluşturur."""
+        """Menü elemanlarını ve karşılık gelen sayfaları oluşturur ve sinyalleri bağlar."""
+        # 1. Derslik Sayfası
         self.derslik_view = DerslikView(self.user_info)
         self.stacked_widget.addWidget(self.derslik_view)
         self.nav_menu.addItem("Derslik İşlemleri")
 
+        # 2. Veri Yükleme Sayfası
         self.veri_yukleme_view = VeriYuklemeView(self.user_info)
         self.stacked_widget.addWidget(self.veri_yukleme_view)
         self.nav_menu.addItem("Veri Yükleme")
         self.veri_yukleme_view.veri_yuklendi_sinyali.connect(self.on_veri_yuklendi)
 
+        # 3. Kayıt Görüntüleme Sayfası
         self.kayit_goruntuleme_view = KayitGoruntulemeView(self.user_info)
         self.stacked_widget.addWidget(self.kayit_goruntuleme_view)
         kayit_item = QListWidgetItem("Kayıt Görüntüleme")
         self.nav_menu.addItem(kayit_item)
         kayit_item.setFlags(kayit_item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
 
+        # 4. Sınav Oluşturma Sayfası
         self.sinav_olusturma_view = SinavOlusturmaView(self.user_info)
+        self.sinav_olusturma_view.program_basariyla_olusturuldu.connect(self.on_program_olusturuldu)
         self.stacked_widget.addWidget(self.sinav_olusturma_view)
         sinav_item = QListWidgetItem("Sınav Programı Oluştur")
         self.nav_menu.addItem(sinav_item)
         sinav_item.setFlags(sinav_item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+
+        # 5. Oturma Planı Sayfası
+        self.oturma_plani_view = OturmaPlaniView(self.user_info)
+        self.stacked_widget.addWidget(self.oturma_plani_view)
+        oturma_plani_item = QListWidgetItem("Oturma Planı Oluştur")
+        self.nav_menu.addItem(oturma_plani_item)
+        oturma_plani_item.setFlags(oturma_plani_item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
 
     def change_view(self, item):
         """Menüden bir eleman seçildiğinde ilgili sayfayı gösterir."""
@@ -77,6 +92,9 @@ class MainWindow(QMainWindow):
         elif text == "Sınav Programı Oluştur":
             self.sinav_olusturma_view.load_data()
             self.stacked_widget.setCurrentWidget(self.sinav_olusturma_view)
+        elif text == "Oturma Planı Oluştur":
+            self.oturma_plani_view.load_data()
+            self.stacked_widget.setCurrentWidget(self.oturma_plani_view)
 
     def on_veri_yuklendi(self, veri_tipi):
         """VeriYuklemeView'dan gelen sinyali yakalar ve durumu günceller."""
@@ -84,7 +102,11 @@ class MainWindow(QMainWindow):
             self.dersler_yuklendi = True
         elif veri_tipi == 'ogrenci':
             self.ogrenciler_yuklendi = True
+        self.update_menu_status()
 
+    def on_program_olusturuldu(self):
+        """SinavOlusturmaView'dan gelen sinyali yakalar ve durumu günceller."""
+        self.program_olusturuldu = True
         self.update_menu_status()
 
     def update_menu_status(self):
@@ -95,8 +117,14 @@ class MainWindow(QMainWindow):
                 text = item.text()
                 if text == "Kayıt Görüntüleme" or text == "Sınav Programı Oluştur":
                     item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEnabled)
+            print("Veri ve Sınav Oluşturma menüleri aktifleştirildi.")
 
-            print("Kayıt Görüntüleme ve Sınav Programı Oluşturma menüleri aktifleştirildi.")
+        if self.program_olusturuldu:
+            for i in range(self.nav_menu.count()):
+                item = self.nav_menu.item(i)
+                if item.text() == "Oturma Planı Oluştur":
+                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEnabled)
+            print("Oturma Planı menüsü aktifleştirildi.")
 
     def initial_data_check(self):
         """Uygulama açıldığında veritabanını kontrol ederek menülerin durumunu ayarlar."""
@@ -112,5 +140,9 @@ class MainWindow(QMainWindow):
         if database.ogrenci_verisi_var_mi(bolum_id):
             self.ogrenciler_yuklendi = True
             print(" -> Mevcut öğrenci verisi bulundu.")
+
+        if database.sinav_programi_var_mi(bolum_id):
+            self.program_olusturuldu = True
+            print(" -> Mevcut sınav programı bulundu.")
 
         self.update_menu_status()

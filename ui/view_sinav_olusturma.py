@@ -5,9 +5,10 @@ from PyQt6.QtWidgets import (QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushBut
 from PyQt6.QtCore import QDate, Qt
 import database
 import takvim_algoritmasi
-
+from PyQt6.QtCore import pyqtSignal
 
 class SinavOlusturmaView(QWidget):
+    program_basariyla_olusturuldu = pyqtSignal()
     def __init__(self, user_info):
         super().__init__()
         self.user_info = user_info
@@ -150,5 +151,6 @@ class SinavOlusturmaView(QWidget):
                     return
 
             QMessageBox.information(self, "Başarılı!", f"{db_mesaj}\n{excel_mesaj}")
+            self.program_basariyla_olusturuldu.emit()
         else:
             QMessageBox.critical(self, "Algoritma Başarısız!", sonuc)
