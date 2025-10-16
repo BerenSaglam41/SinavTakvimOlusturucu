@@ -3,7 +3,7 @@ import pandas as pd
 def parse_ders_listesi(file_path):
     """
     Excel dosyasını okur ve her sınıfın altındaki dersleri listeler.
-    Eksik 'yapi' sütunu varsa varsayılan olarak 'Z' atanır.
+    Dersleri "Zorunlu", "Seçmeli" veya "Seçimlik" olarak doğru şekilde sınıflandırır.
     """
     print("--- Excel Parser Başlatıldı ---")
     print(f"Dosya Yolu: {file_path}")
@@ -14,23 +14,36 @@ def parse_ders_listesi(file_path):
 
         dersler_listesi = []
         current_sinif = None
+        # Dersin yapısını (Zorunlu, Seçmeli, Seçimlik) izlemek için yeni bir değişken
+        current_yapi = "Zorunlu"
 
         for index, row in df.iterrows():
             first_cell = str(row[0]).strip() if not pd.isnull(row[0]) else ""
 
             if not first_cell:
-                continue  # Boş satır
+                continue  # Boş satırları atla
 
+            # "SEÇMELİ DERS" veya "SEÇİMLİK DERS" başlıklarını yakala
+            if "SEÇMELİ DERS" in first_cell.upper():
+                current_yapi = "Seçmeli"
+                print("-> 'Seçmeli Dersler' bölümü algılandı.")
+                continue
+            elif "SEÇİMLİK DERS" in first_cell.upper():
+                current_yapi = "Seçimlik"
+                print("-> 'Seçimlik Dersler' bölümü algılandı.")
+                continue
             # "1. Sınıf", "2. Sınıf" gibi başlıkları yakala
-            if "SINIF" in first_cell.upper():
+            elif "SINIF" in first_cell.upper():
                 for char in first_cell:
                     if char.isdigit():
                         current_sinif = int(char)
-                        print(f"\n{current_sinif}. Sınıf algılandı.")
+                        # Yeni bir sınıfa geçildiğinde, ders yapısını varsayılana (Zorunlu) döndür
+                        current_yapi = "Zorunlu"
+                        print(f"\n{current_sinif}. Sınıf algılandı (Ders yapısı '{current_yapi}' olarak ayarlandı).")
                         break
                 continue
 
-            # Başlık satırlarını atla
+            # "DERS KODU" gibi başlık satırlarını atla
             if first_cell.upper() == "DERS KODU":
                 continue
 
@@ -39,13 +52,13 @@ def parse_ders_listesi(file_path):
                 ders_kodu = row[0]
                 ders_adi = row[1]
                 ogretim_uyesi = row[2] if len(row) > 2 else None
-                yapi = row[3] if len(row) > 3 and not pd.isnull(row[3]) else "Zorunlu"  # Varsayılan: Zorunlu
-
+                
+                # Ders bilgisi sözlüğünü oluştururken mevcut yapı bilgisini kullan
                 ders_bilgisi = {
                     'ders_kodu': ders_kodu,
                     'ders_adi': ders_adi,
                     'ogretim_uyesi': ogretim_uyesi,
-                    'yapi': yapi,
+                    'yapi': current_yapi, # Düzeltilmiş kısım
                     'sinif': current_sinif
                 }
 

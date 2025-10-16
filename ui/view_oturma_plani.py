@@ -1,17 +1,41 @@
-from PyQt6.QtWidgets import (QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton,
-                             QListWidget, QMessageBox)
+from PyQt6.QtWidgets import (
+    QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QListWidget,
+    QMessageBox, QFileDialog
+)
 import database
-from PyQt6.QtWidgets import QFileDialog
 import oturma_plani_algoritmasi
 import pdf_reporter
-
 
 class OturmaPlaniView(QWidget):
     def __init__(self, user_info):
         super().__init__()
         self.user_info = user_info
+        self.setStyleSheet("""
+            QWidget {
+                background: #F5F5F7;
+                font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+                font-size: 15px;
+            }
+            QListWidget {
+                background: #fff; border-radius: 13px; font-size: 15px; color: #21283d;
+                border: 1.2px solid #dde2ec; padding: 7px;
+            }
+            QLabel {
+                font-size: 16px; font-weight: 600; color: #1A202C; margin-bottom: 7px;
+            }
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #007AFF, stop:1 #3A86FF);
+                color: #fff; font-size: 16px; font-weight: 600;
+                border: none; border-radius: 12px;
+                padding: 10px 0;
+                margin-top: 12px;
+            }
+            QPushButton:hover { background: #005bb5; }
+        """)
 
         main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(40, 30, 40, 30)
+        main_layout.setSpacing(15)
 
         main_layout.addWidget(QLabel("Oturma planını oluşturmak için aşağıdan bir sınav seçin:"))
 
@@ -19,63 +43,43 @@ class OturmaPlaniView(QWidget):
         main_layout.addWidget(self.sinav_listesi_widget)
 
         self.olustur_button = QPushButton("Seçili Sınav İçin Oturma Planı Oluştur ve Göster")
-        self.olustur_button.setStyleSheet("font-size: 16px; padding: 10px;")
         self.olustur_button.clicked.connect(self.oturma_plani_olustur)
         main_layout.addWidget(self.olustur_button)
 
     def load_data(self):
-        """Bu sayfa açıldığında, oluşturulmuş sınavların listesini veritabanından yükler."""
         self.sinav_listesi_widget.clear()
         sinavlar = database.get_sinav_listesi(self.user_info.get('bolum_id'))
         for sinav_id, ders_kodu, ders_adi, tarih, saat in sinavlar:
-            # Tarih ve saat formatını daha okunaklı yapalım
             tarih_str = tarih.strftime('%d.%m.%Y')
             saat_str = saat.strftime('%H:%M')
             item_text = f"[{ders_kodu}] {ders_adi}  -  ({tarih_str} {saat_str})"
-
             self.sinav_listesi_widget.addItem(item_text)
-            # Her bir elemana görünmez bir şekilde sinav_id'yi saklayalım
-            self.sinav_listesi_widget.item(self.sinav_listesi_widget.count() - 1).setData(32, sinav_id)  # 32: UserRole
+            self.sinav_listesi_widget.item(
+                self.sinav_listesi_widget.count() - 1).setData(32, sinav_id)
 
     def oturma_plani_olustur(self):
-        """Butona basıldığında seçili sınav için plan oluşturur, kaydeder ve PDF'e aktarır."""
         secili_item = self.sinav_listesi_widget.currentItem()
         if not secili_item:
             QMessageBox.warning(self, "Hata", "Lütfen listeden bir sınav seçin.")
             return
-
         secili_sinav_id = secili_item.data(32)
-
-        # 1. Adım: Veritabanından sınav detaylarını al
         ogrenciler, derslikler = database.get_sinav_detaylari_for_plan(secili_sinav_id)
         if not ogrenciler or not derslikler:
             QMessageBox.critical(self, "Hata", "Bu sınav için öğrenci veya derslik bilgisi bulunamadı.")
             return
-
-        # 2. Adım: Oturma planı algoritmasını çalıştır (DÜZELTİLMİŞ SATIR)
-        basarili_alg, mesaj_alg, plan_db, plan_pdf = oturma_plani_algoritmasi.generate_seating_plan(secili_sinav_id,
-                                                                                                    ogrenciler,
-                                                                                                    derslikler)
+        basarili_alg, mesaj_alg, plan_db, plan_pdf = oturma_plani_algoritmasi.generate_seating_plan(
+            secili_sinav_id, ogrenciler, derslikler)
         if not basarili_alg:
-            QMessageBox.critical(self, "Algoritma Hatası", mesaj_alg)
-            return
-
-        # 3. Adım: Planı veritabanına kaydet
+            QMessageBox.critical(self, "Algoritma Hatası", mesaj_alg); return
         basarili_db, mesaj_db = database.oturma_planini_kaydet(secili_sinav_id, plan_db)
         if not basarili_db:
-            QMessageBox.critical(self, "Veritabanı Kayıt Hatası", mesaj_db)
-            return
-
-        # 4. Adım: PDF olarak kaydet
-        dosya_yolu, _ = QFileDialog.getSaveFileName(self, "Oturma Planını Kaydet",
-                                                    f"oturma_plani_{secili_sinav_id}.pdf", "PDF Dosyaları (*.pdf)")
+            QMessageBox.critical(self, "Veritabanı Kayıt Hatası", mesaj_db); return
+        dosya_yolu, _ = QFileDialog.getSaveFileName(
+            self, "Oturma Planını Kaydet", f"oturma_plani_{secili_sinav_id}.pdf", "PDF Dosyaları (*.pdf)")
         if dosya_yolu:
             basarili_pdf, mesaj_pdf = pdf_reporter.create_seating_plan_pdf(dosya_yolu, plan_pdf, derslikler)
             if not basarili_pdf:
-                QMessageBox.critical(self, "PDF Oluşturma Hatası", mesaj_pdf)
-                return
-
+                QMessageBox.critical(self, "PDF Oluşturma Hatası", mesaj_pdf); return
             QMessageBox.information(self, "Başarılı!", f"{mesaj_db}\n{mesaj_pdf}")
         else:
-            QMessageBox.information(self, "Başarılı!",
-                                    f"{mesaj_db}\nPDF kaydetme işlemi kullanıcı tarafından iptal edildi.")
+            QMessageBox.information(self, "Başarılı!", f"{mesaj_db}\nPDF kaydetme işlemi kullanıcı tarafından iptal edildi.")
