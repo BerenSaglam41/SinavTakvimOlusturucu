@@ -1,0 +1,5 @@
+openpyxl
+pandas
+psycopg2-binary
+PyQt6
+reportlab
