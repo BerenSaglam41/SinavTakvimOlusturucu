@@ -1,7 +1,8 @@
+import os
 import psycopg2
 from psycopg2.extras import execute_batch # BU SATIRI EKLE
 
-DB_CONNECTION_STRING = "postgresql://postgres.zmmnhfizjtgxjzwjxdar:05314039191qwE@aws-1-us-east-2.pooler.supabase.com:5432/postgres"
+DB_CONNECTION_STRING = os.getenv("DB_CONNECTION_STRING")
 
 
 def get_connection():
